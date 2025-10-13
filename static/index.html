@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Styling Mirror</title>
+    <!-- Import Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --brand-red: #ff2d2d;
+            --light-grey-bg: #f5f5f5;
+            --dark-text: #333;
+            --light-text: #888;
+        }
+
+        /* General Body and Font Setup */
+        body {
+            background-color: var(--light-grey-bg);
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        /* Main container to control layout and spacing */
+        .app-container {
+            width: 100%;
+            position: relative;
+            max-width: 550px;
+            min-height: 90vh;
+            padding: 40px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            text-align: center;
+        }
+
+        /* --- Page Switching Logic --- */
+        .page {
+            display: none;
+            width: 100%;
+            flex-direction: column;
+        }
+        .page.active {
+            display: flex;
+        }
+
+        /* ==================================== */
+        /* ---        STYLES FOR PAGE 1     --- */
+        /* ==================================== */
+        #page1 { text-align: center; color: var(--brand-red); }
+        .main-title {
+            font-size: 3.2rem; font-weight: 300; text-transform: uppercase;
+            letter-spacing: -1px; line-height: 1.2; margin-top: 5vh;
+            margin-bottom: 25vh; display: inline-block; text-align: left;
+        }
+        .title-line { display: block; white-space: nowrap; }
+        .title-line-2 { display: flex; justify-content: space-between; }
+        .upload-area {
+            display: flex; flex-direction: column; align-items: center;
+            cursor: pointer; margin-bottom: 25vh;
+        }
+        .upload-area::before {
+            content: ''; display: block; width: 1px; height: 40px;
+            background-color: var(--brand-red); margin-bottom: 25px;
+        }
+        .upload-text {
+            text-transform: uppercase; font-size: 0.7rem;
+            font-weight: 300; letter-spacing: 0.5px; color: var(--brand-red);
+        }
+        .upload-text .bolder { font-weight: 500; }
+        .benefits-list {
+            text-align: justify; text-transform: uppercase;
+            font-size: 0.75rem; font-weight: 400; line-height: 1.5;
+            white-space: normal; color: var(--brand-red);
+        }
+        .benefits-list p { margin: 0; text-align-last: left; }
+
+        /* ==================================== */
+        /* ---        STYLES FOR PAGE 2     --- */
+        /* ==================================== */
+        #page2 { gap: 30px; color: var(--brand-red); }
+        .page2-header { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
+        .page2-title { font-size: 1.8rem; font-weight: 500; line-height: 1.1; text-align: left; }
+        .page2-categories { font-size: 0.8rem; font-weight: 500; text-align: right; }
+        .page2-categories span { display: block; margin-bottom: 5px; }
+        .item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px 20px; width: 100%; }
+        .grid-item { text-align: center; cursor: pointer; }
+        .grid-item img {
+            width: 100%; max-width: 200px; display: block; margin: 0 auto;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.05));
+        }
+        .grid-item .item-number { margin-top: 15px; font-size: 0.8rem; font-weight: 500; }
+        .page2-footer {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            display: flex; justify-content: space-between; width: 100%; max-width: 550px;
+            padding: 0 40px; font-size: 0.9rem; font-weight: 500; box-sizing: border-box;
+        }
+        .footer-link { cursor: pointer; font-weight: inherit; }
+        
+        /* ==================================== */
+        /* ---        STYLES FOR PAGE 3     --- */
+        /* ==================================== */
+        #page3 { align-items: center; text-align: center; gap: 25px; }
+        .page3-header { font-size: 1.5rem; font-weight: 500; color: var(--brand-red); }
+        .result-image { display: block; width: 100%; max-width: 380px; }
+        .item-title {
+            font-size: 1.2rem; font-weight: 700; text-transform: uppercase;
+            color: var(--dark-text);
+        }
+        .item-title span {
+            background-color: var(--brand-red);
+            color: white;
+            padding: 4px 8px;
+            margin-left: 2px;
+        }
+        .actions-container {
+            position: relative;
+            padding-left: 25px; /* Space for the vertical line */
+            margin-top: 10px;
+        }
+        .actions-container::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1px;
+            height: 100%;
+            background-color: var(--dark-text);
+        }
+        .action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+        .action-button {
+            border: 1px solid var(--light-text);
+            color: var(--light-text);
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .description {
+            color: var(--light-text);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            text-align: left;
+            margin-top: 5px;
+            /* --- Force single line --- */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .page3-description {
+            color: var(--light-text);
+            font-size: 0.95rem;
+            line-height: 1.8;
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            max-width: 100%;
+        }
+        .page3-description .desc-line {
+            display: block;
+            width: 100%;
+            text-align: center;
+            margin: 6px 0;
+            white-space: normal;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+
+        <!-- =================== PAGE 1: UPLOAD =================== -->
+        <section id="page1" class="page active">
+            <header>
+                <h1 class="main-title">
+                    <div class="title-line">YOUR&nbsp;AI-POWERED</div>
+                    <div class="title-line title-line-2">
+                        <span>STYLING</span>
+                        <span>MIRROR</span>
+                    </div>
+                </h1>
+            </header>
+            <main class="upload-area" id="upload-button">
+                <p class="upload-text">
+                    <span>TAKE A PHOTO</span>
+                    <span class="bolder">/UPLOAD FULL-BODY PHOTO</span>
+                </p>
+            </main>
+            <input type="file" id="photo-upload" accept="image/*" style="display: none;">
+            <footer class="benefits-list">
+                <p>
+                    SO SHOPPING FEELS EXCITING INSTEAD OF STRESSFUL OR TIRING  
+                    SO YOUR MIRROR BECOMES A PERSONAL FASHION STYLIST  
+                    SO FASHION CHOICES ALWAYS FEEL CONFIDENT AND EASY  
+                    SO EVERY OUTFIT IS VISIBLE, EVEN WITHOUT FULL STOCK  
+                    SO RETAILERS SAVE TIME, SPACE, AND REDUCE CLOTHING DAMAGE  
+                    SO EVERY STYLE AND COLOR IS WITHIN REACH
+                </p>
+            </footer>
+        </section>
+
+        <!-- =================== PAGE 2: SELECTION =================== -->
+        <section id="page2" class="page">
+            <header class="page2-header">
+                <div class="page2-title">FLOP<br>MIRROR</div>
+                <div class="page2-categories">
+                    <span>TOP</span>
+                    <span>BOTTOM</span>
+                </div>
+            </header>
+            <main class="item-grid" id="item-grid"></main>
+                
+            <footer class="page2-footer">
+                <div class="footer-link" id="back-button">BACK</div>
+                <div class="footer-link">STYLE</div>
+                <div class="footer-link">FIT</div>
+                <div class="footer-link" id="try-button">TRY</div>
+            </footer>
+        </section>
+
+        <!-- =================== PAGE 3: RESULT =================== -->
+        <section id="page3" class="page">
+             <header class="page3-header">/FLOP MIRROR</header>
+             <main>
+                <img id="result-image" class="result-image" src="https://i.imgur.com/YxY6SMH.png" alt="Virtual try-on result">
+                <div class="item-title">LEVIS MENS 511/<span>T-SHIRT</span></div>
+                <div class="actions-container">
+                    <div class="action-buttons">
+                        <div class="action-button">new view</div>
+                        <div class="action-button" id="try-another-button">try another dress</div>
+                        <div class="action-button">buy now</div>
+                        <div class="action-button">fashion view</div>
+                    </div>
+                </div>
+             </main>
+             <footer class="description page3-description">
+                 <p>
+                     loading
+                 </p>
+             </footer>
+        </section>
+
+    </div>
+
+    <script>
+        // Use origin in dev and production; change if you really need a different host
+        const API = window.location.origin || "http://localhost:8000";
+
+        const pages = document.querySelectorAll('.page');
+        const uploadButton = document.getElementById('upload-button');
+        const photoUploadInput = document.getElementById('photo-upload');
+        const backButton = document.getElementById('back-button');
+        const tryAnotherButton = document.getElementById('try-another-button');
+        const resultImage = document.getElementById('result-image');
+        const grid = document.getElementById('item-grid');
+        const tryButton = document.getElementById('try-button');
+
+        let userPhoto = null;
+        // --- CHANGE: This will now store the GCS key, e.g., "catalogue/dress1.png"
+        let selectedDressKey = null; 
+        let catalogueLoaded = false;
+
+        function goToPage(pageId) {
+            pages.forEach(p => p.classList.remove('active'));
+            const el = document.getElementById(pageId);
+            if (!el) {
+                console.error('goToPage: page not found', pageId);
+                return;
+            }
+            el.classList.add('active');
+        }
+
+        if (uploadButton) {
+            uploadButton.addEventListener('click', () => {
+                if (photoUploadInput) photoUploadInput.click();
+            });
+        }
+
+        if (photoUploadInput) {
+            photoUploadInput.addEventListener('change', async (e) => {
+                if (!e.target.files || e.target.files.length === 0) return;
+                userPhoto = e.target.files[0];
+                selectedDressKey = null;
+                await loadCatalogue();
+                goToPage('page2');
+            });
+        }
+
+        async function loadCatalogue() {
+            catalogueLoaded = false;
+            if (grid) grid.innerHTML = '<p class="loading">Loading catalogue…</p>';
+            selectedDressKey = null;
+            try {
+                const res = await fetch(`${API}/catalogue`);
+                if (!res.ok) throw new Error('Catalogue HTTP ' + res.status);
+                const data = await res.json();
+                
+                // --- CHANGE: Now we use both 'images' (for URLs) and 'keys' (for identifiers)
+                if (grid && data.images && data.keys) {
+                    grid.innerHTML = '';
+                    // Iterate through both images and keys
+                    data.images.forEach((imageUrl, index) => {
+                        const dressKey = data.keys[index]; // Get the corresponding GCS key
+                        if (!dressKey) return; // Skip if key is missing for some reason
+
+                        const div = document.createElement('div');
+                        div.className = 'grid-item';
+                        // --- CHANGE: Store the full GCS key in the dataset
+                        div.dataset.dressKey = dressKey; 
+
+                        div.innerHTML = `
+                            <img src="${imageUrl}" alt="Catalogue item ${index + 1}">
+                            <p class="item-number">${String(index + 1).padStart(2, '0')}</p>
+                        `;
+                        grid.appendChild(div);
+                    });
+                }
+                catalogueLoaded = true;
+            } catch (err) {
+                console.error('Failed to load catalogue', err);
+                if (grid) grid.innerHTML = '<p class="error">Failed to load catalogue. See console.</p>';
+                catalogueLoaded = false;
+            }
+        }
+
+        if (grid) {
+            grid.addEventListener('click', (ev) => {
+                const item = ev.target.closest('.grid-item');
+                if (!item) return;
+                
+                const prev = grid.querySelector('.selected-item');
+                if (prev) {
+                    prev.classList.remove('selected-item');
+                    prev.style.outline = 'none';
+                }
+                item.classList.add('selected-item');
+                item.style.outline = '2px solid var(--brand-red)';
+                
+                // --- CHANGE: We get the full key from the dataset now
+                selectedDressKey = item.dataset.dressKey;
+                console.debug('Selected dress key:', selectedDressKey);
+            });
+        }
+        
+        async function handleTryClick() {
+            if (!userPhoto) { alert('Please upload your photo first!'); return; }
+            if (!catalogueLoaded) { alert('Catalogue still loading, please wait.'); return; }
+            // --- CHANGE: Check selectedDressKey instead of selectedDress
+            if (!selectedDressKey) { alert('Please select a dress first!'); return; }
+            if (!tryButton) { console.error('TRY button not found'); return; }
+
+            tryButton.dataset.origText = tryButton.textContent;
+            tryButton.textContent = 'FIT';
+            tryButton.style.pointerEvents = 'none';
+
+            const page2Footer = document.querySelector('#page2 .page2-footer');
+            const loaderNode = document.createElement('div');
+            loaderNode.className = 'inline-loader';
+            loaderNode.textContent = 'TRY';
+            if (page2Footer) page2Footer.appendChild(loaderNode);
+
+            const fd = new FormData();
+            fd.append('model_photo', userPhoto);
+            // --- CHANGE: Use the correct field name 'dress_key_or_name' and send the selected key
+            fd.append('dress_key_or_name', selectedDressKey);
+
+            try {
+                const res = await fetch(`${API}/try-on`, { method: 'POST', body: fd });
+                if (!res.ok) {
+                    const txt = await res.text();
+                    console.error('try-on HTTP error', res.status, txt);
+                    alert('Server error during try-on. See console.');
+                    return;
+                }
+                const json = await res.json();
+                if (!json.result_url) {
+                    console.error('try-on returned no result_url', json);
+                    alert('Server did not return an image. Check logs.');
+                    return;
+                }
+
+                resultImage.src = json.result_url;
+
+                const descFooter3 = document.querySelector('footer.page3-description p');
+                if (descFooter3) {
+                    const raw = (json.description || 'No description available.').trim();
+                    const words = raw.split(/\s+/);
+                    const chunkSize = 7;
+                    descFooter3.innerHTML = '';
+                    for (let i = 0; i < words.length; i += chunkSize) {
+                        const span = document.createElement('span');
+                        span.className = 'desc-line';
+                        span.textContent = words.slice(i, i + chunkSize).join(' ');
+                        descFooter3.appendChild(span);
+                    }
+                }
+                goToPage('page3');
+            } catch (err) {
+                console.error('Try-on failed:', err);
+                alert('Network or server error during try-on. See console.');
+            } finally {
+                if (tryButton) {
+                    tryButton.textContent = tryButton.dataset.origText || 'TRY';
+                    tryButton.style.pointerEvents = 'auto';
+                }
+                if (loaderNode.parentNode) loaderNode.remove();
+            }
+        }
+
+        if (tryButton) {
+            tryButton.addEventListener('click', handleTryClick);
+        } else {
+            console.warn('TRY button selector did not find an element; verify selector');
+        }
+
+        if (backButton) {
+            backButton.addEventListener('click', () => goToPage('page1'));
+        }
+
+        if (tryAnotherButton) {
+            tryAnotherButton.addEventListener('click', async () => {
+                // --- CHANGE: reset selectedDressKey
+                selectedDressKey = null; 
+                if (grid) {
+                    document.querySelectorAll('.grid-item').forEach(i => {
+                        i.classList.remove('selected-item');
+                        i.style.outline = 'none';
+                    });
+                }
+                // No need to reload catalogue unless you want to refresh the random images
+                // await loadCatalogue(); 
+                goToPage('page2');
+            });
+        }
+    </script>
+</body>
+</html>

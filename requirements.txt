@@ -1,0 +1,10 @@
+openai
+fastapi
+pydantic 
+Pillow
+google-genai
+google-cloud-storage
+multipart
+gunicorn
+google-auth
+python-multipart
