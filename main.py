@@ -117,6 +117,57 @@ def upload_bytes_to_gcs(data: bytes, dest_key: str, content_type: str = "image/p
     blob = bucket.blob(dest_key)
     blob.upload_from_string(data, content_type=content_type)
     return dest_key
+def generate_with_genai(image_inputs: list, prompt: str, model: str = "gemini-2.5-flash-image-preview"):
+    """
+    image_inputs: list of PIL.Image or bytes (the SDK in main.py uses PIL images)
+    prompt: str prompt to instruct Gemini
+    returns: bytes of generated image
+    """
+    if not genai_client:
+        raise RuntimeError("genai client not configured (GEMINI_API_KEY missing)")
+
+    try:
+        response = genai_client.models.generate_content(
+            model=model,
+            contents=[*image_inputs, prompt],
+        )
+        image_parts = [part for part in response.candidates[0].content.parts if getattr(part, "inline_data", None)]
+        if not image_parts:
+            raise ValueError("No inline image data in GenAI response")
+        return image_parts[0].inline_data.data
+    except Exception as e:
+        logger.exception("GenAI generation failed: %s", e)
+        raise
+def generate_description_with_openai(image_bytes: bytes, desc_prompt: str = None):
+    """
+    Optional wrapper to generate a textual description using OpenAI.
+    Returns: string or None.
+    """
+    if not openai_client:
+        return None
+    try:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        if not desc_prompt:
+            desc_prompt = (
+                "Write one single sentence (no line breaks) describing this outfit. It must contain 39 to 45 words. "
+                "Make it elegant, customer-friendly and retail copy-focused."
+            )
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": desc_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+                    ]
+                }
+            ],
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning("OpenAI description generation failed: %s", e)
+        return None
 
 # --- FastAPI app ---
 app = FastAPI()
@@ -243,6 +294,107 @@ async def try_on(
 
     return {"result_key": gen_key, "result_url": result_url, "description": description}
 
+@app.post("/re-render")
+async def re_render_result(
+    result_key: str = Form(...),
+    expires_hours: int = Form(24),
+):
+    """
+    Re-render an existing generated image using Gemini with a randomly chosen style prompt.
+    Returns: {"result_key","result_url","style","description"}
+    """
+
+    if not GCS_BUCKET_NAME:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not set")
+    if not genai_client:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set or genai client not initialized")
+
+    # --- Always-available style prompts (defined before any use) ---
+    style_prompts = [
+        (
+            "cinematic",
+            "Turn this outfit photo into a cinematic, editorial fashion shot suitable for a magazine cover. "
+            "Enhance dramatic lighting, add shallow depth-of-field, rich color grading, film grain, subtle vignette, "
+            "and keep the garment details sharp and natural."
+        ),
+        (
+            "street-fashion",
+            "Transform this image into a high-energy street-fashion photograph: natural urban background bokeh, "
+            "dynamic pose, contrasty sunlight, vivid colors, realistic motion feel, and keep the clothing textures accurate."
+        ),
+        (
+            "studio-lookbook",
+            "Reimagine this outfit as a professional studio lookbook photo: clean background, softbox lighting, "
+            "neutral tones, elegant posture, crisp textile detail, fashion-catalogue feel."
+        ),
+        (
+            "runway",
+            "Render this as a high-end runway photograph: strong spotlight, long lens depth compression, elegant stride, "
+            "audience blur, and glossy color tones inspired by Vogue runway captures."
+        ),
+        (
+            "dreamy-editorial",
+            "Make this outfit appear in a dreamy editorial fantasy photo: soft haze, glowing light, pastel atmosphere, "
+            "cinematic composition, artistic storytelling mood."
+        ),
+    ]
+
+    # Download existing generated image bytes
+    try:
+        existing_bytes = download_blob_bytes(result_key)
+        base_img = Image.open(BytesIO(existing_bytes)).convert("RGBA")
+    except Exception as e:
+        logger.exception("Failed to read existing generated image '%s': %s", result_key, e)
+        raise HTTPException(status_code=404, detail=f"Could not fetch image '{result_key}' from GCS: {e}")
+
+    # Choose a random style/prompt
+    try:
+        chosen_style, prompt = random.choice(style_prompts)
+        logger.info("Re-render chosen style: %s", chosen_style)
+    except Exception as e:
+        logger.exception("Failed choosing style prompt: %s", e)
+        raise HTTPException(status_code=500, detail="Internal error choosing style")
+
+    # Generate re-rendered image using Gemini (generate_with_genai must exist)
+    try:
+        new_image_bytes = generate_with_genai([base_img], prompt)
+        if not new_image_bytes:
+            raise RuntimeError("GenAI returned no image bytes")
+    except Exception as e:
+        logger.exception("Re-render generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Re-render generation failed: {e}")
+
+    # Upload new image to GCS
+    try:
+        new_filename = f"re_{chosen_style}_{Path(result_key).stem}_{random.randint(1000,9999)}.png"
+        new_key = (GCS_GENERATED_PREFIX.rstrip("/") + "/" + new_filename).lstrip("/")
+        upload_bytes_to_gcs(new_image_bytes, new_key, content_type="image/png")
+    except Exception as e:
+        logger.exception("Failed to upload re-rendered image to GCS: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to upload re-rendered image: {e}")
+
+    # Create signed URL
+    try:
+        new_url = generate_signed_url_for_key(new_key, expires_hours=expires_hours)
+    except Exception as e:
+        logger.exception("Failed to create signed URL for %s: %s", new_key, e)
+        raise HTTPException(status_code=500, detail="Failed to create signed URL for new image")
+
+    # Optionally generate/update description with OpenAI
+    description = None
+    try:
+        if 'generate_description_with_openai' in globals():
+            description = generate_description_with_openai(new_image_bytes)
+    except Exception as e:
+        logger.warning("Description generation failed: %s", e)
+        description = None
+
+    return {
+        "result_key": new_key,
+        "result_url": new_url,
+        "style": chosen_style,
+        "description": description,
+    }
 
 @app.get("/")
 def index():
@@ -252,7 +404,3 @@ def index():
     return {"status": "ok", "note": "index.html not found; frontend can use GCS signed URLs."}
 
 
-# Only for local testing (do not use reload=True on Render)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main2:app", host="0.0.0.0", port=8000, reload=True)
