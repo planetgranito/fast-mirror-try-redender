@@ -8,3 +8,4 @@ multipart
 gunicorn
 google-auth
 python-multipart
+uvicorn

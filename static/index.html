@@ -236,7 +236,7 @@
                         <div class="action-button">new view</div>
                         <div class="action-button" id="try-another-button">try another dress</div>
                         <div class="action-button">buy now</div>
-                        <div class="action-button">fashion view</div>
+                        <div class="action-button" id="fashion-view-button">fashion view</div>
                     </div>
                 </div>
              </main>
@@ -261,10 +261,13 @@
         const resultImage = document.getElementById('result-image');
         const grid = document.getElementById('item-grid');
         const tryButton = document.getElementById('try-button');
+        const fashionViewBtn = document.getElementById('fashion-view-button'); // ensure this id exists in HTML
 
         let userPhoto = null;
-        // --- CHANGE: This will now store the GCS key, e.g., "catalogue/dress1.png"
-        let selectedDressKey = null; 
+        // --- CHANGE: store the GCS key from try-on; backend returns result_key
+        let selectedDressKey = null;
+        let lastResultKey = null; // <-- new: last generated result key from /try-on
+        let lastResultUrl = null; // <-- new: last generated url
         let catalogueLoaded = false;
 
         function goToPage(pageId) {
@@ -301,19 +304,16 @@
                 const res = await fetch(`${API}/catalogue`);
                 if (!res.ok) throw new Error('Catalogue HTTP ' + res.status);
                 const data = await res.json();
-                
-                // --- CHANGE: Now we use both 'images' (for URLs) and 'keys' (for identifiers)
+
                 if (grid && data.images && data.keys) {
                     grid.innerHTML = '';
-                    // Iterate through both images and keys
                     data.images.forEach((imageUrl, index) => {
-                        const dressKey = data.keys[index]; // Get the corresponding GCS key
-                        if (!dressKey) return; // Skip if key is missing for some reason
+                        const dressKey = data.keys[index];
+                        if (!dressKey) return;
 
                         const div = document.createElement('div');
                         div.className = 'grid-item';
-                        // --- CHANGE: Store the full GCS key in the dataset
-                        div.dataset.dressKey = dressKey; 
+                        div.dataset.dressKey = dressKey;
 
                         div.innerHTML = `
                             <img src="${imageUrl}" alt="Catalogue item ${index + 1}">
@@ -334,7 +334,7 @@
             grid.addEventListener('click', (ev) => {
                 const item = ev.target.closest('.grid-item');
                 if (!item) return;
-                
+
                 const prev = grid.querySelector('.selected-item');
                 if (prev) {
                     prev.classList.remove('selected-item');
@@ -342,17 +342,55 @@
                 }
                 item.classList.add('selected-item');
                 item.style.outline = '2px solid var(--brand-red)';
-                
-                // --- CHANGE: We get the full key from the dataset now
+
                 selectedDressKey = item.dataset.dressKey;
                 console.debug('Selected dress key:', selectedDressKey);
             });
         }
-        
+
+        // --- helper: render description in footer page3
+        function renderDescription(raw) {
+            const descFooter3 = document.querySelector('footer.page3-description p');
+            if (!descFooter3) return;
+            const text = (raw || 'No description available.').trim();
+            const words = text.split(/\s+/);
+            const chunkSize = 7;
+            descFooter3.innerHTML = '';
+            for (let i = 0; i < words.length; i += chunkSize) {
+                const span = document.createElement('span');
+                span.className = 'desc-line';
+                span.textContent = words.slice(i, i + chunkSize).join(' ');
+                descFooter3.appendChild(span);
+                if (i + chunkSize < words.length) descFooter3.appendChild(document.createElement('br'));
+            }
+        }
+
+        // --- helper: show chosen style next to item title span
+        function showStyleInTitle(styleText) {
+            const itemTitle = document.querySelector('.item-title');
+            if (!itemTitle) return;
+            // remove old if exists
+            const existing = itemTitle.querySelector('.generated-style');
+            if (existing) existing.remove();
+
+            const small = document.createElement('span');
+            small.className = 'generated-style';
+            small.style.fontSize = '0.8em';
+            small.style.marginLeft = '8px';
+            small.style.color = '#444';
+            small.textContent = `(${styleText})`;
+
+            const innerSpan = itemTitle.querySelector('span');
+            if (innerSpan) {
+                innerSpan.insertAdjacentElement('afterend', small);
+            } else {
+                itemTitle.appendChild(small);
+            }
+        }
+
         async function handleTryClick() {
             if (!userPhoto) { alert('Please upload your photo first!'); return; }
             if (!catalogueLoaded) { alert('Catalogue still loading, please wait.'); return; }
-            // --- CHANGE: Check selectedDressKey instead of selectedDress
             if (!selectedDressKey) { alert('Please select a dress first!'); return; }
             if (!tryButton) { console.error('TRY button not found'); return; }
 
@@ -368,7 +406,6 @@
 
             const fd = new FormData();
             fd.append('model_photo', userPhoto);
-            // --- CHANGE: Use the correct field name 'dress_key_or_name' and send the selected key
             fd.append('dress_key_or_name', selectedDressKey);
 
             try {
@@ -386,21 +423,16 @@
                     return;
                 }
 
+                // show resulting image and save its key/url for later re-render
                 resultImage.src = json.result_url;
+                lastResultKey = json.result_key || null;  // <-- NEW: capture backend key
+                lastResultUrl = json.result_url || null;
+                window.lastResultKey = lastResultKey; // expose globally if needed
+                window.lastResultUrl = lastResultUrl;
 
-                const descFooter3 = document.querySelector('footer.page3-description p');
-                if (descFooter3) {
-                    const raw = (json.description || 'No description available.').trim();
-                    const words = raw.split(/\s+/);
-                    const chunkSize = 7;
-                    descFooter3.innerHTML = '';
-                    for (let i = 0; i < words.length; i += chunkSize) {
-                        const span = document.createElement('span');
-                        span.className = 'desc-line';
-                        span.textContent = words.slice(i, i + chunkSize).join(' ');
-                        descFooter3.appendChild(span);
-                    }
-                }
+                // show description (if any)
+                renderDescription(json.description);
+
                 goToPage('page3');
             } catch (err) {
                 console.error('Try-on failed:', err);
@@ -426,19 +458,85 @@
 
         if (tryAnotherButton) {
             tryAnotherButton.addEventListener('click', async () => {
-                // --- CHANGE: reset selectedDressKey
-                selectedDressKey = null; 
+                selectedDressKey = null;
                 if (grid) {
                     document.querySelectorAll('.grid-item').forEach(i => {
                         i.classList.remove('selected-item');
                         i.style.outline = 'none';
                     });
                 }
-                // No need to reload catalogue unless you want to refresh the random images
-                // await loadCatalogue(); 
                 goToPage('page2');
             });
         }
+
+        // ---------- NEW: fashion view handler ----------
+        // Make sure you have this element in your HTML:
+        // <div class="action-button" id="fashion-view-button">fashion view</div>
+        function setFashionLoading(on = true) {
+            if (!fashionViewBtn) return;
+            if (on) {
+                fashionViewBtn.dataset.origText = fashionViewBtn.textContent;
+                fashionViewBtn.textContent = 'fashioning...';
+                fashionViewBtn.style.pointerEvents = 'none';
+                fashionViewBtn.disabled = true;
+            } else {
+                fashionViewBtn.textContent = fashionViewBtn.dataset.origText || 'fashion view';
+                fashionViewBtn.style.pointerEvents = 'auto';
+                fashionViewBtn.disabled = false;
+            }
+        }
+
+        if (fashionViewBtn) {
+            fashionViewBtn.addEventListener('click', async () => {
+                if (!lastResultKey) {
+                    alert('No generated look available. Please do a try-on first.');
+                    return;
+                }
+
+                setFashionLoading(true);
+
+                try {
+                    const fd = new FormData();
+                    fd.append('result_key', lastResultKey);
+
+                    const resp = await fetch(`${API}/re-render`, { method: 'POST', body: fd });
+                    if (!resp.ok) {
+                        const txt = await resp.text().catch(() => '');
+                        console.error('re-render failed', resp.status, txt);
+                        alert('Server error during fashion view. Check console.');
+                        return;
+                    }
+
+                    const json = await resp.json();
+
+                    // update image (use returned url)
+                    if (json.result_url) {
+                        resultImage.src = json.result_url;
+                        lastResultKey = json.result_key || lastResultKey; // update to new key if backend returned one
+                        lastResultUrl = json.result_url || lastResultUrl;
+                        window.lastResultKey = lastResultKey;
+                        window.lastResultUrl = lastResultUrl;
+                    }
+
+                    // show the randomly chosen style name (backend returns json.style)
+                    if (json.style) {
+                        showStyleInTitle(json.style);
+                    }
+
+                    // update description
+                    renderDescription(json.description);
+
+                } catch (err) {
+                    console.error('Error while re-rendering:', err);
+                    alert('Network error while creating fashion view. See console for details.');
+                } finally {
+                    setFashionLoading(false);
+                }
+            });
+        } else {
+            console.warn('#fashion-view-button not found — add id="fashion-view-button" to your fashion view element');
+        }
     </script>
+
 </body>
 </html>

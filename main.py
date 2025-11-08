@@ -402,5 +402,8 @@ def index():
     if index_file.exists():
         return FileResponse(index_file)
     return {"status": "ok", "note": "index.html not found; frontend can use GCS signed URLs."}
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 1094bc50803592e76427f6bdd36fea8e6a17f1cd
