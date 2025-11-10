@@ -654,80 +654,85 @@
             }
             loadingTypewriterActive = true;
 
-            // --- Image Slideshow (robust) ---
+            // --- Image Slideshow with progressive loading ---
             const imagesCount = 23;
             const imageBase = '/static/images/';
             const ext = '.jpg';
-            const minDelay = 1000;
-            const maxDelay = 3000;
+            const minDelay = 1500;
+            const maxDelay = 3500;
 
             const imageFiles = Array.from({length: imagesCount}, (_, i) => `${imageBase}${i+1}${ext}`);
 
-            // Preload all images and retain Image objects
-            const preloaded = imageFiles.map(src => {
-                const img = new Image();
-                img.src = src;
-                img.dataset.ready = "false";
-                img.onload = () => { img.dataset.ready = "true"; console.log('Preloaded', src); };
-                img.onerror = () => { console.warn('Failed preload', src); img.dataset.ready = "error"; };
-                return img;
-            });
-
+            // Track loaded images as they complete
+            const loadedImages = [];
             const loadingImage = document.getElementById('loadingImage');
-            let idx = 0;
             let stopped = false;
 
-            function randDelay() { return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay; }
+            // Start preloading all images
+            imageFiles.forEach((src, i) => {
+                const img = new Image();
+                img.onload = () => {
+                    loadedImages.push({ src, img, index: i });
+                    console.log(`✓ Loaded ${loadedImages.length}/${imagesCount}:`, src);
+                };
+                img.onerror = () => {
+                    console.warn('✗ Failed to load:', src);
+                };
+                img.src = src;
+            });
 
-            async function showNext() {
+            function randDelay() { 
+                return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay; 
+            }
+
+            let currentIndex = 0;
+
+            function showNext() {
                 if (stopped) return;
-                if (!document.getElementById('loading-overlay')?.classList.contains('active')) return;
-
-                // advance index
-                idx = (idx + 1) % preloaded.length;
-                const candidate = preloaded[idx];
-
-                console.log('Attempt to show slide', idx + 1, candidate.src, 'ready=', candidate.dataset.ready);
-
-                // Wait until the image has loaded (or a short fallback)
-                const start = Date.now();
-                while (candidate.dataset.ready !== "true" && Date.now() - start < 3500) {
-                await new Promise(r => setTimeout(r, 80));
+                if (!document.getElementById('loading-overlay')?.classList.contains('active')) {
+                    stopped = true;
+                    return;
                 }
 
-                // Fade swap using onload to avoid flash/blank frames
+                // Only show images that have loaded
+                if (loadedImages.length === 0) {
+                    // No images loaded yet, check again soon
+                    loadingImageTimeout = setTimeout(showNext, 300);
+                    return;
+                }
+
+                // Pick next loaded image
+                currentIndex = (currentIndex + 1) % loadedImages.length;
+                const current = loadedImages[currentIndex];
+
+                // Smooth transition
+                loadingImage.style.transition = 'opacity 0.4s ease';
                 loadingImage.style.opacity = 0;
-                const swapAfter = () => {
-                if (!document.getElementById('loading-overlay')?.classList.contains('active')) return;
-                // ensure src is set to the fully qualified path
-                loadingImage.onload = () => {
+
+                setTimeout(() => {
+                    if (!document.getElementById('loading-overlay')?.classList.contains('active')) return;
+                    loadingImage.src = current.src;
                     loadingImage.style.opacity = 1;
-                    loadingImage.onload = null;
-                };
-                loadingImage.src = candidate.src;
-                console.log('Swapped to', candidate.src);
-                };
+                }, 400);
 
-                // small delay for opacity transition
-                setTimeout(swapAfter, 420);
-
-                // schedule next frame
+                // Schedule next image
                 loadingImageTimeout = setTimeout(showNext, randDelay());
             }
 
-            // show initial image immediately (if preloaded)
-            const first = preloaded[0];
-            if (first.dataset.ready === "true") {
-                loadingImage.src = first.src;
+            // Show first image when it loads
+            const firstImg = new Image();
+            firstImg.onload = () => {
+                loadingImage.src = firstImg.src;
                 loadingImage.style.opacity = 1;
-            } else {
-                // start with what you have, and let showNext progress later
-                loadingImage.src = first.src;
-                loadingImage.style.opacity = 1;
-            }
-
-            // start the loop after a small delay so first frame is visible
-            loadingImageTimeout = setTimeout(showNext, randDelay());
+                // Start slideshow after first image is visible
+                loadingImageTimeout = setTimeout(showNext, randDelay());
+            };
+            firstImg.onerror = () => {
+                console.error('Failed to load first image');
+                // Start anyway with whatever loads
+                loadingImageTimeout = setTimeout(showNext, 1000);
+            };
+            firstImg.src = imageFiles[0];
 
             // --- Typewriter Animation ---
             const lines = [
@@ -748,7 +753,7 @@
                 container.appendChild(el);
                 for (const ch of text) {
                     if (!loadingTypewriterActive) return;
-                    el.innerHTML += ch === '\\n' ? '<br>' : escapeHtml(ch);
+                    el.innerHTML += ch === '\n' ? '<br>' : escapeHtml(ch);
                     await sleep(TYPE_SPEED);
                 }
                 return el;
@@ -758,14 +763,14 @@
                 let raw = '';
                 Array.from(el.childNodes).forEach(n => {
                     if (n.nodeType === Node.TEXT_NODE) raw += n.textContent;
-                    else if (n.nodeName === 'BR') raw += '\\n';
+                    else if (n.nodeName === 'BR') raw += '\n';
                     else raw += n.textContent;
                 });
                 let arr = raw.split('');
                 while (arr.length > 0) {
                     if (!loadingTypewriterActive) return;
                     arr.pop();
-                    el.innerHTML = escapeHtml(arr.join('')).replace(/\\n/g, '<br>');
+                    el.innerHTML = escapeHtml(arr.join('')).replace(/\n/g, '<br>');
                     await sleep(DELETE_SPEED);
                 }
                 el.remove();
@@ -796,11 +801,14 @@
             const overlay = document.getElementById('loading-overlay');
             overlay.classList.add('active');
             
-            // Reset content
-            document.getElementById('loadingImage').style.opacity = 1;
-            document.getElementById('loadingTypewriter').innerHTML = '';
+            // Show a temporary message while images load
+            const typewriter = document.getElementById('loadingTypewriter');
+            typewriter.innerHTML = '<div style="opacity: 0.6;">.</div>';
             
-            // Start animations
+            // Reset imag
+            document.getElementById('loadingImage').style.opacity = 0.3;
+            
+            // Start animations (which now waits for preload)
             initLoadingAnimations();
         }
 
