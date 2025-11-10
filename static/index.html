@@ -101,6 +101,97 @@
             padding: 0 40px; font-size: 0.9rem; font-weight: 500; box-sizing: border-box;
         }
         .footer-link { cursor: pointer; font-weight: inherit; }
+        /* ==================================== */
+/* ---    LOADING OVERLAY STYLES    --- */
+/* ==================================== */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--light-grey-bg);
+            z-index: 9999;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-container {
+            width: 100%;
+            max-width: 550px;
+            min-height: 90vh;
+            padding: 40px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .loading-container h1 {
+            color: var(--brand-red);
+            text-align: left;
+            line-height: 1;
+            width: 100%;
+            margin-top: 5vh;
+            margin-bottom: 20vh;
+        }
+
+        .loading-container h1 span:first-child {
+            display: block;
+            font-weight: 400;
+            font-size: 44px;
+        }
+
+        .loading-container h1 span:last-child {
+            display: block;
+            font-weight: 700;
+            font-size: 64px;
+        }
+
+        .loading-container .image-box {
+            width: 212px;
+            height: 320px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.06);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15vh;
+        }
+
+        .loading-container .image-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 0.6s ease;
+        }
+
+        .loading-container .typewriter {
+            color: var(--brand-red);
+            font-size: 16px;
+            line-height: 1.6;
+            text-align: left;
+            white-space: pre-wrap;
+            min-height: 100px;
+            width: 100%;
+        }
+
+        @media (max-width: 760px) {
+            .loading-overlay { padding: 20px; }
+            .loading-container { padding: 20px; }
+            .loading-container h1 { margin-bottom: 15vh; }
+            .loading-container h1 span:first-child { font-size: 32px; }
+            .loading-container h1 span:last-child { font-size: 48px; }
+            .loading-container .image-box { margin-bottom: 15vh; }
+        }
         
         /* ==================================== */
         /* ---        STYLES FOR PAGE 3     --- */
@@ -173,6 +264,19 @@
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-container">
+            <h1>
+                <span>THANK YOU FOR</span>
+                <span>WAITING.</span>
+            </h1>
+            <div class="image-box">
+                <img id="loadingImage" src="/static/images/1.jpg" alt="loading image">
+            </div>
+            <div class="typewriter" id="loadingTypewriter"></div>
+        </div>
+    </div>
 
     <div class="app-container">
 
@@ -394,15 +498,10 @@
             if (!selectedDressKey) { alert('Please select a dress first!'); return; }
             if (!tryButton) { console.error('TRY button not found'); return; }
 
-            tryButton.dataset.origText = tryButton.textContent;
-            tryButton.textContent = 'FIT';
+            // Disable button and show loading overlay
             tryButton.style.pointerEvents = 'none';
-
-            const page2Footer = document.querySelector('#page2 .page2-footer');
-            const loaderNode = document.createElement('div');
-            loaderNode.className = 'inline-loader';
-            loaderNode.textContent = 'TRY';
-            if (page2Footer) page2Footer.appendChild(loaderNode);
+            tryButton.textContent = 'FITTING...';
+            showLoadingOverlay();
 
             const fd = new FormData();
             fd.append('model_photo', userPhoto);
@@ -423,29 +522,25 @@
                     return;
                 }
 
-                // show resulting image and save its key/url for later re-render
+                // Hide loading and show results
+                hideLoadingOverlay();
                 resultImage.src = json.result_url;
-                lastResultKey = json.result_key || null;  // <-- NEW: capture backend key
+                lastResultKey = json.result_key || null;
                 lastResultUrl = json.result_url || null;
-                window.lastResultKey = lastResultKey; // expose globally if needed
+                window.lastResultKey = lastResultKey;
                 window.lastResultUrl = lastResultUrl;
 
-                // show description (if any)
                 renderDescription(json.description);
-
                 goToPage('page3');
             } catch (err) {
                 console.error('Try-on failed:', err);
                 alert('Network or server error during try-on. See console.');
+                hideLoadingOverlay(); // Hide on error too
             } finally {
-                if (tryButton) {
-                    tryButton.textContent = tryButton.dataset.origText || 'TRY';
-                    tryButton.style.pointerEvents = 'auto';
-                }
-                if (loaderNode.parentNode) loaderNode.remove();
+                tryButton.style.pointerEvents = 'auto';
+                tryButton.textContent = 'TRY';
             }
         }
-
         if (tryButton) {
             tryButton.addEventListener('click', handleTryClick);
         } else {
@@ -535,6 +630,193 @@
             });
         } else {
             console.warn('#fashion-view-button not found — add id="fashion-view-button" to your fashion view element');
+        }
+        // ==================================== //
+        // ---    LOADING OVERLAY LOGIC     --- //
+        // ==================================== //
+
+        let loadingImageTimeout = null;
+        let loadingTypewriterActive = false;
+
+        function escapeHtml(t) {
+            return t.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]);
+        }
+
+        function sleep(ms) {
+            return new Promise(r => setTimeout(r, ms));
+        }
+
+        function initLoadingAnimations() {
+            // Stop any existing animations
+            if (loadingImageTimeout) {
+                clearTimeout(loadingImageTimeout);
+                loadingImageTimeout = null;
+            }
+            loadingTypewriterActive = true;
+
+            // --- Image Slideshow (robust) ---
+            const imagesCount = 23;
+            const imageBase = '/static/images/';
+            const ext = '.jpg';
+            const minDelay = 1000;
+            const maxDelay = 3000;
+
+            const imageFiles = Array.from({length: imagesCount}, (_, i) => `${imageBase}${i+1}${ext}`);
+
+            // Preload all images and retain Image objects
+            const preloaded = imageFiles.map(src => {
+                const img = new Image();
+                img.src = src;
+                img.dataset.ready = "false";
+                img.onload = () => { img.dataset.ready = "true"; console.log('Preloaded', src); };
+                img.onerror = () => { console.warn('Failed preload', src); img.dataset.ready = "error"; };
+                return img;
+            });
+
+            const loadingImage = document.getElementById('loadingImage');
+            let idx = 0;
+            let stopped = false;
+
+            function randDelay() { return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay; }
+
+            async function showNext() {
+                if (stopped) return;
+                if (!document.getElementById('loading-overlay')?.classList.contains('active')) return;
+
+                // advance index
+                idx = (idx + 1) % preloaded.length;
+                const candidate = preloaded[idx];
+
+                console.log('Attempt to show slide', idx + 1, candidate.src, 'ready=', candidate.dataset.ready);
+
+                // Wait until the image has loaded (or a short fallback)
+                const start = Date.now();
+                while (candidate.dataset.ready !== "true" && Date.now() - start < 3500) {
+                await new Promise(r => setTimeout(r, 80));
+                }
+
+                // Fade swap using onload to avoid flash/blank frames
+                loadingImage.style.opacity = 0;
+                const swapAfter = () => {
+                if (!document.getElementById('loading-overlay')?.classList.contains('active')) return;
+                // ensure src is set to the fully qualified path
+                loadingImage.onload = () => {
+                    loadingImage.style.opacity = 1;
+                    loadingImage.onload = null;
+                };
+                loadingImage.src = candidate.src;
+                console.log('Swapped to', candidate.src);
+                };
+
+                // small delay for opacity transition
+                setTimeout(swapAfter, 420);
+
+                // schedule next frame
+                loadingImageTimeout = setTimeout(showNext, randDelay());
+            }
+
+            // show initial image immediately (if preloaded)
+            const first = preloaded[0];
+            if (first.dataset.ready === "true") {
+                loadingImage.src = first.src;
+                loadingImage.style.opacity = 1;
+            } else {
+                // start with what you have, and let showNext progress later
+                loadingImage.src = first.src;
+                loadingImage.style.opacity = 1;
+            }
+
+            // start the loop after a small delay so first frame is visible
+            loadingImageTimeout = setTimeout(showNext, randDelay());
+
+            // --- Typewriter Animation ---
+            const lines = [
+                `MIRROR AI IS CREATING YOUR REFLECTION,`,
+                `PLEASE HOLD ON A MOMENT.`,
+                `LEARNING YOUR PHOTO AND STYLE,`,
+                `THANK YOU FOR YOUR PATIENCE.`
+            ];
+            const container = document.getElementById('loadingTypewriter');
+            const TYPE_SPEED = 26;
+            const DELETE_SPEED = 70;
+            const PAUSE_AFTER_LINE = 900;
+            const PAUSE_AFTER_FULL = 2200;
+
+            async function typeBlock(text) {
+                const el = document.createElement('div');
+                el.className = 'line';
+                container.appendChild(el);
+                for (const ch of text) {
+                    if (!loadingTypewriterActive) return;
+                    el.innerHTML += ch === '\\n' ? '<br>' : escapeHtml(ch);
+                    await sleep(TYPE_SPEED);
+                }
+                return el;
+            }
+
+            async function deleteBlock(el) {
+                let raw = '';
+                Array.from(el.childNodes).forEach(n => {
+                    if (n.nodeType === Node.TEXT_NODE) raw += n.textContent;
+                    else if (n.nodeName === 'BR') raw += '\\n';
+                    else raw += n.textContent;
+                });
+                let arr = raw.split('');
+                while (arr.length > 0) {
+                    if (!loadingTypewriterActive) return;
+                    arr.pop();
+                    el.innerHTML = escapeHtml(arr.join('')).replace(/\\n/g, '<br>');
+                    await sleep(DELETE_SPEED);
+                }
+                el.remove();
+            }
+
+            async function loop() {
+                while (loadingTypewriterActive && document.getElementById('loading-overlay').classList.contains('active')) {
+                    for (const t of lines) {
+                        if (!loadingTypewriterActive) return;
+                        await typeBlock(t);
+                        await sleep(PAUSE_AFTER_LINE);
+                    }
+                    await sleep(PAUSE_AFTER_FULL);
+                    const blocks = Array.from(container.children);
+                    for (let i = blocks.length - 1; i >= 0; i--) {
+                        if (!loadingTypewriterActive) return;
+                        await deleteBlock(blocks[i]);
+                        await sleep(420);
+                    }
+                    await sleep(700);
+                }
+            }
+            
+            loop();
+        }
+
+        function showLoadingOverlay() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.classList.add('active');
+            
+            // Reset content
+            document.getElementById('loadingImage').style.opacity = 1;
+            document.getElementById('loadingTypewriter').innerHTML = '';
+            
+            // Start animations
+            initLoadingAnimations();
+        }
+
+        function hideLoadingOverlay() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.classList.remove('active');
+            
+            // Stop animations
+            if (loadingImageTimeout) {
+                clearTimeout(loadingImageTimeout);
+                loadingImageTimeout = null;
+            }
+            loadingTypewriterActive = false;
+            
+            // Clear content
+            document.getElementById('loadingTypewriter').innerHTML = '';
         }
     </script>
 
