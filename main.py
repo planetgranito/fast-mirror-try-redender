@@ -402,12 +402,3 @@ def index():
     if index_file.exists():
         return FileResponse(index_file)
     return {"status": "ok", "note": "index.html not found; frontend can use GCS signed URLs."}
-<<<<<<< Updated upstream
-=======
-
-
-# Only for local testing (do not use reload=True on Render)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main2:app", host="0.0.0.0", port=8000, reload=True)
->>>>>>> Stashed changes
